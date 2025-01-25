@@ -39,6 +39,7 @@ Set up for development, build and then copy the two .dll outputs into the `BepIn
 
 - Create your thunderkit project (pipeline and manifest). Pipeline output (asset bundle locations) must output to `Aloft\Aloft_Data\StreamingAssets\amf` to be loaded automatically.
 
+See [creating a recipe](Documentation/CreatingARecipe.md) to explore how to add a recipe to the game. Or see [more in depth documentation for setting up a project.](Documentation/README.md)
 
 ## Creating your first recipe
 

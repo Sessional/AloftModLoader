@@ -1,0 +1,7 @@
+{
+    "name": "Aloft_Mod_Framework",
+    "description": "A mod framework to remove the need to write boilerplate for content only mods.",
+    "version_number": "0.1.1",
+    "dependencies": [],
+    "website_url": "https://github.com/Sessional/AloftModLoader"
+}
