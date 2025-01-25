@@ -9,6 +9,7 @@ using Interactions.Interactibles.Interaction_LIsteners;
 using JetBrains.Annotations;
 using Level_Manager;
 using Scriptable_Objects;
+using Scriptable_Objects.Power;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -17,6 +18,7 @@ using System.Linq;
 using System.Reflection;
 using Terrain.Platforms.Population;
 using Terrain.Platforms.Population.Construction;
+using Terrain.Platforms.Population.Construction.Storage;
 using Terrain.Platforms.Population.Population_Soul;
 using Terrain.Platforms.Types;
 using UI;
@@ -49,7 +51,7 @@ namespace AloftModLoader
         {
             if (__result == null)
             {
-                return AloftModLoader.Items.First(x => x.ID == id);
+                return AloftModLoader.Items.FirstOrDefault(x => x.ID == id);
             }
 
             return __result;
@@ -59,7 +61,6 @@ namespace AloftModLoader
     static class RecipePatches
     {
         private static IList PatchedGroups = new List<CraftingStation>();
-        private static bool Learned = false;
         public static ScriptableCraftRecipeGroup RewriteRecipeResult(ScriptableCraftRecipeGroup __result, CraftingStation stationType)
         {
             if (__result == null)
@@ -80,17 +81,6 @@ namespace AloftModLoader
                     //Level.CraftingManager.UnlockRecipe.LearnItemRecipe(recipe.Output.ItemID);
                 }
                 PatchedGroups.Add(stationType);
-
-
-
-
-
-                if (!Learned)
-                {
-                    Learned = true;
-                    // TOOD: should have a different way of setting up learning blueprints for building?
-                    AloftModLoader.BuildingBlueprints.ForEach(blueprint => Level.CraftingManager.UnlockRecipe.UnlockNewRecipeBuilding(blueprint.PopData.PopulationID));
-                }
             }
 
             return __result;
@@ -155,8 +145,21 @@ namespace AloftModLoader
             }
         }
 
+        private static bool Learned = false;
         public static ScriptableCrafting GetCrafting(ScriptableCrafting __result, PopulationID.ID id)
         {
+
+            if (!Learned)
+            {
+                Learned = true;
+                // TOOD: should have a different way of setting up learning blueprints for building?
+                Console.WriteLine("Learning blueprints!");
+                AloftModLoader.BuildingBlueprints.ForEach(blueprint => {
+                    Console.WriteLine("Learning blueprint " + blueprint.name);
+                    Level.CraftingManager.UnlockRecipe.UnlockNewRecipeBuilding(blueprint.PopData.PopulationID);
+                });
+            }
+
             InitListExtension(); // TOOD: why is this not getting called somewhere else..?
 
             var loadedBuildng = AloftModLoader.BuildingBlueprints.FirstOrDefault(x => x.ID == id);
@@ -210,6 +213,15 @@ namespace AloftModLoader
                 Console.WriteLine(input);
                 switch (parts[0])
                 {
+                    case "showpop":
+                        var island = Level.TerrainManager.PlatformManager.HomeIsland;
+                        Console.WriteLine("Is island null? " + (island == null).ToString());
+                        var pop = island.PopulationSouls.Values.FirstOrDefault(x => x.PopulationID == (PopulationID.ID) 400003);
+                        Console.WriteLine("Is bee pop null? " + (pop == null).ToString());
+                        Console.WriteLine("Pop location is " + pop.LocalPosition);
+                        __result = true;
+                        return false;
+                        break;
                     case "learn":
                         switch (parts[1])
                         {
@@ -273,7 +285,7 @@ namespace AloftModLoader
     {
         const string GUID = "aloftmodloader.sessional.dev";
         const string NAME = "Aloft Mod Loader";
-        const string VERSION = "1.0";
+        const string VERSION = "0.1.1";
 
         public static Shader shaderEveryoneNeeds;
 
@@ -291,7 +303,7 @@ namespace AloftModLoader
         static FieldInfo LocalizationField;
 
         public static BepInEx.Logging.ManualLogSource LoggerRef;
-        public void Awake()
+        public void Start()
         {
             Logger.LogInfo("Running!");
             string bundleDirectory = Path.Combine(Application.streamingAssetsPath, "amf");
@@ -314,9 +326,6 @@ namespace AloftModLoader
                 DontDestroyOnLoad(x);
                 x.hideFlags = HideFlags.HideAndDontSave;
             }).ToList();
-
-            var assets = string.Join("\n\t", allAssets.Select(x => x.name).ToList());
-            Logger.LogInfo(assets);
 
             Items = allAssets
                 .Where(x => x is AloftModFrameworkItem)
@@ -450,6 +459,10 @@ namespace AloftModLoader
 
             // TODO: is there blueprints that might not have been mapped to a building? If so, that's probably something we should say...
             BuildingBlueprints = buildingsAndTheirBlueprints.Select(x => x.Blueprint).ToList();
+
+            var workbench = Resources.Load("Platform Builder/Constructions/Machines/Pre_Construction_Workbench") as GameObject;
+            var workbenchMeshRenderer = workbench.GetComponentsInChildren<MeshRenderer>().First();
+            var workbenchMaterial = workbenchMeshRenderer.material;
             Buildings = buildingsAndTheirBlueprints.Select(x => x.Building)//.Union(BuildingsWithoutBlueprints)
                 .ForEach(x =>
                 {
@@ -459,11 +472,9 @@ namespace AloftModLoader
                         var normalTex = mesh.material.GetTexture("_BumpMap");
                         var detailMask = mesh.material.GetTexture("_DetailMask");
 
-                        var mat = new Material(Shader.Find("Amplify/V2/DefaultPBR_Interactive"));
+                        var mat = new Material(workbenchMaterial);
                         mat.name = "AloftModFramework_DefaultPBR_Interactive_Material";
                         mat.hideFlags = HideFlags.HideAndDontSave;
-                        Console.WriteLine("Material names: " + string.Join(",", mat.GetTexturePropertyNames().ToList()));
-                        Console.WriteLine("Is mesh main tex null?" + (mainTex == null));
                         mat.SetTexture("_TextureAlbedo", mainTex);
                         mat.SetTexture("_TextureNormals", normalTex);
                         mat.SetTexture("_TextureMask", detailMask);
@@ -472,16 +483,17 @@ namespace AloftModLoader
                         mesh.material = mat;
                         for (int i = 0; i < mesh.materials.Length; i++)
                         {
-                            var mats = new Material(Shader.Find("Amplify/V2/DefaultPBR_Interactive"));
-                            mats.name = "AloftModFramework_DefaultPBR_Interactive_Material";
-                            mats.hideFlags = HideFlags.HideAndDontSave;
-                            Console.WriteLine("Material names: " + string.Join(",", mat.GetTexturePropertyNames().ToList()));
-                            mats.SetTexture("_TextureAlbedo", allAssets.First(tex => tex.name.Contains("T_Sheep_Wh_2_D")) as Texture2D);
-                            mats.SetTexture("_TextureNormals", normalTex);
-                            mats.SetTexture("_TextureMask", detailMask);
-                            mats.SetVector("_ColorSelect", new Vector4(1.6f, 1.3f, 0.5f, 1));
-                            mats.SetColor("_Color", new Color(1f, 1f, 1f, 1f));
-                            mesh.materials[i] = mats;
+                            // woulda been nice to go from shader, but IDK what's going on there... Lets you dodge the bullet on loading an object...
+                            // var mats = new Material(Shader.Find("Amplify/V2/DefaultPBR_Interactive"));
+                            var mat2 = new Material(workbenchMaterial);
+                            mat2.name = "AloftModLoaderMaterial";
+                            mat2.hideFlags = HideFlags.HideAndDontSave;
+                            mat2.SetTexture("_TextureAlbedo", mainTex);
+                            mat2.SetTexture("_TextureNormals", normalTex);
+                            mat2.SetTexture("_TextureMask", detailMask);
+                            mat2.SetVector("_ColorSelect", new Vector4(1.6f, 1.3f, 0.5f, 1));
+                            mat2.SetColor("_Color", new Color(1f, 1f, 1f, 1f));
+                            mesh.materials[i] = mat2;
                         }
                     });
                 })
@@ -527,7 +539,6 @@ namespace AloftModLoader
             var prefabPoint = AccessTools.Method(typeof(ScriptablePopulationData), nameof(ScriptablePopulationData.GetPrefabGameObject));
             var prefabHook = AccessTools.Method(typeof(BuildingHooks), nameof(BuildingHooks.GetPrefabGameObject));
             harmony.Patch(prefabPoint, null, new HarmonyMethod(prefabHook));
-
 
             var originalScriptableItem = AccessTools.Method(typeof(UI.CanvasConsole), "EnterCommand");
             var secondScriptableItem = AccessTools.Method(typeof(Cheats), nameof(Cheats.ProcessCommand));
