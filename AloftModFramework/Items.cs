@@ -29,8 +29,45 @@ namespace AloftModFramework.Items
         public ItemTagID[] ItemTags;
     }
 
+    // TODO: ideally item references would look something like this, but Unity doesn't appear to serialize these
+    // when loading from an asset bundle... It's there in the file but comes out null when you load the asset.. :(
+    //[Serializable]
+    //public class AloftModFrameworkItemReference
+    //{
+    //    public int ItemId;
+    //    public ItemID.ID VanillaItem;
+    //    public AloftModFrameworkItem ModItem;
 
-    [CreateAssetMenu(fileName = "Item", menuName = "AloftModFramework/Crafting Recipe")]
+    //    public AloftModFrameworkItemReference() { }
+    //    public AloftModFrameworkItemReference(int itemId, ItemID.ID vanillaItem, AloftModFrameworkItem modItem)
+    //    {
+    //        ItemId = itemId;
+    //        VanillaItem = vanillaItem;
+    //        ModItem = modItem;
+    //    }
+
+    //    public int GetItemIdAsInt()
+    //    {
+    //        if (VanillaItem != ItemID.ID.Empty) return (int)VanillaItem;
+    //        if (ModItem != null) return ModItem.ItemId;
+    //        else return ItemId;
+    //    }
+
+    //    public ItemID.ID GetItemId()
+    //    {
+    //        return (ItemID.ID)GetItemIdAsInt();
+    //    }
+    //}
+
+    [CreateAssetMenu(fileName = "RecipeGroup", menuName = "AloftModFramework/Crafting Recipe Group")]
+    public class AloftModFrameworkCraftingRecipeGroup : ScriptableObject
+    {
+        public int StationId;
+        public string StationName;
+        public AloftModFrameworkCraftingRecipe[] Recipes;
+    }
+
+    [CreateAssetMenu(fileName = "Recipe", menuName = "AloftModFramework/Crafting Recipe")]
     public class AloftModFrameworkCraftingRecipe : ScriptableObject
     {
         public int[] InputItems;
@@ -38,37 +75,19 @@ namespace AloftModFramework.Items
         public int OutputItemId;
         public AloftModFrameworkItem OutputModItem;
         public int Quantity;
+
+        public bool AttachToExistingStation;
+        public SRecipeManager.CraftingStation Station;
     }
 
-    /*
-     *     [Serializable]
-    public class CraftingCostClass
-    {
-        [FormerlySerializedAs("itemID")]
-        public ItemID.ID ItemID;
-
-        [FormerlySerializedAs("qty")]
-        public int Qty;
-
-        public CraftingCostClass()
-        {
-        }
-
-        public CraftingCostClass(ItemID.ID itemID, int qty)
-        {
-            ItemID = itemID;
-            Qty = qty;
-        }
-    }*/
-
-    [CreateAssetMenu(fileName = "Item", menuName = "AloftModFramework/Localization Resource")]
+    [CreateAssetMenu(fileName = "Localization", menuName = "AloftModFramework/Localization Resource")]
     public class AloftModFrameworkLocalization : ScriptableObject
     {
         public TextAsset LocalizationFile;
         public string Language;
     }
 
-    [CreateAssetMenu(fileName = "Item", menuName = "AloftModFramework/Building")]
+    [CreateAssetMenu(fileName = "Building", menuName = "AloftModFramework/Building")]
     public class AloftModFrameworkBuildingData : ScriptableObject
     {
         public int PopulationId;
@@ -84,7 +103,7 @@ namespace AloftModFramework.Items
         public bool CanLearnViaSketchbook;
     }
 
-    [CreateAssetMenu(fileName = "Item", menuName = "AloftModFramework/Building Blueprint")]
+    [CreateAssetMenu(fileName = "Building Blueprint", menuName = "AloftModFramework/Building Blueprint")]
     public class AloftModFrameworkBuildingBlueprint : ScriptableObject
     {
         public bool HideInBuildMenu;

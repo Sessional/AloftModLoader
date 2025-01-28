@@ -1,15 +1,9 @@
 ﻿using AloftModFramework.Items;
 using BepInEx;
 using BepInEx.Unity.Mono;
-using Character;
-using Crafting.MultiStep_Construction;
 using HarmonyLib;
-using Helper;
-using Interactions.Interactibles.Interaction_LIsteners;
-using JetBrains.Annotations;
 using Level_Manager;
 using Scriptable_Objects;
-using Scriptable_Objects.Power;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -17,14 +11,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using Terrain.Platforms.Population;
-using Terrain.Platforms.Population.Construction;
-using Terrain.Platforms.Population.Construction.Storage;
-using Terrain.Platforms.Population.Population_Soul;
 using Terrain.Platforms.Types;
-using UI;
-using UI.Building;
-using UI.In_Game;
-using UI.Inventory.V2;
 using UnityEngine;
 using Utilities;
 using static Scriptable_Objects.SRecipeManager;
@@ -63,24 +50,27 @@ namespace AloftModLoader
         private static IList PatchedGroups = new List<CraftingStation>();
         public static ScriptableCraftRecipeGroup RewriteRecipeResult(ScriptableCraftRecipeGroup __result, CraftingStation stationType)
         {
-            if (__result == null)
+            if (stationType == CraftingStation.All)
             {
-                // TODO: allow new station types?
+                // this flow looks very similar to the station type filter below... But... it's `ALL` so it doesn't do a filter
+                // it really just adds everything.
+                PatchedGroups.Add(stationType);
+                __result.Recipes = __result.Recipes.AddRangeToArray(AloftModLoader.Recipes.ToArray());
             }
 
-            if (!PatchedGroups.Contains(stationType))
+            // TODO: inappropriate to unlock recipes here, but until a new way is plugged in/discovered/wired up, this will do.
+            Level.CraftingManager.UnlockRecipe.UnlockRecipes(AloftModLoader.Recipes.Select(recipe => recipe.Output.ItemID).ToArray());
+
+            if (__result == null)
             {
-                // TOOD: filter our recipes to ones interested in this station.
-                __result.Recipes = __result.Recipes.AddRangeToArray(AloftModLoader.Recipes.ToArray());
-                Level.CraftingManager.UnlockRecipe.UnlockRecipes(AloftModLoader.Recipes.Select(recipe => recipe.Output.ItemID).ToArray());
-                foreach (var recipe in AloftModLoader.Recipes)
-                {
-                    // TODO: instead of forcing, lets recreate the ScriptableUnlockManager from inside the CraftingUnlockRecipeManager
-                    // override the `OnGetItem` function to load our unlockable things maybe?
-                    // this was the original unlock method... but just because we show recipes doesn't mean it should pop up "NEW RECIPE!"
-                    //Level.CraftingManager.UnlockRecipe.LearnItemRecipe(recipe.Output.ItemID);
-                }
+                // This assumes that any new stations have a pre-built recipe group that is wired up for us when constructing recipes
+                // this may or may not preclude people from adding new recipes into another mods workbench...
+                __result = AloftModLoader.RecipeGroups.Where(x => x.StationType == stationType).FirstOrDefault();
+            }
+            else if (__result != null && !PatchedGroups.Contains(stationType))
+            {
                 PatchedGroups.Add(stationType);
+                __result.Recipes = __result.Recipes.AddRangeToArray(AloftModLoader.Recipes.Where(x => x.CraftingStation == stationType).ToArray());
             }
 
             return __result;
@@ -280,6 +270,11 @@ namespace AloftModLoader
         public GameObject Prefab;
     }
 
+    public class AloftModFrameworkInternalCraftingRecipe : ScriptableCraftRecipe
+    {
+        public SRecipeManager.CraftingStation CraftingStation;
+    }
+
     [BepInPlugin(GUID, NAME, VERSION)]
     public class AloftModLoader : BaseUnityPlugin
     {
@@ -292,7 +287,8 @@ namespace AloftModLoader
         static List<AssetBundle> bundles;
         static List<UnityEngine.Object> allAssets;
         public static List<ScriptableInventoryItem> Items;
-        public static List<ScriptableCraftRecipe> Recipes;
+        public static List<AloftModFrameworkInternalCraftingRecipe> Recipes;
+        public static List<ScriptableCraftRecipeGroup> RecipeGroups;
         public static List<ScriptableCrafting> BuildingBlueprints;
         public static List<AloftModFrameworkPopulationData> Buildings;
         public static List<AloftModFrameworkLocalization> Localizations;
@@ -348,12 +344,28 @@ namespace AloftModLoader
                 })
                 .ToList();
 
+
+            var aloftFrameworkRecipeGroups = allAssets
+                .Where(x => x is AloftModFrameworkCraftingRecipeGroup)
+                .Cast<AloftModFrameworkCraftingRecipeGroup>();
+
+            RecipeGroups = aloftFrameworkRecipeGroups
+                .Select(x =>
+                {
+                    var group = ScriptableObject.CreateInstance(typeof(ScriptableCraftRecipeGroup)) as ScriptableCraftRecipeGroup;
+
+                    group.StationType = (CraftingStation) x.StationId;
+
+                    return group;
+                })
+                .ToList();
+
             Recipes = allAssets
                 .Where(x => x is AloftModFrameworkCraftingRecipe)
                 .Cast<AloftModFrameworkCraftingRecipe>()
                 .Select(x =>
                 {
-                    var recipe = ScriptableObject.CreateInstance(typeof(ScriptableCraftRecipe)) as ScriptableCraftRecipe;
+                    var recipe = ScriptableObject.CreateInstance(typeof(AloftModFrameworkInternalCraftingRecipe)) as AloftModFrameworkInternalCraftingRecipe;
                     Logger.LogInfo("Generating recipe: " + x.name);
                     recipe.Input = x.InputItems.Select(input => (ItemID.ID)input).ToArray();
                     recipe.hideFlags = HideFlags.HideAndDontSave;
@@ -372,6 +384,19 @@ namespace AloftModLoader
                         outputItemId = (ItemID.ID)x.OutputItemId;
                     }
                     recipe.Output = new ScriptableCrafting.CraftingCostClass(outputItemId, x.Quantity);
+                    
+                    if (x.AttachToExistingStation)
+                    {
+                        recipe.CraftingStation = x.Station;
+                    }
+
+                    var correspondingGroup = aloftFrameworkRecipeGroups.Where(group => group.Recipes.Contains(x)).FirstOrDefault();
+                    if (correspondingGroup != null)
+                    {
+                        var recipeGroup = RecipeGroups.Where(group => group.StationType == (CraftingStation)correspondingGroup.StationId).FirstOrDefault();
+                        recipeGroup.Recipes = recipeGroup.Recipes.AddItem(recipe).ToArray();
+                        recipe.CraftingStation = (CraftingStation)correspondingGroup.StationId;
+                    }
 
                     return recipe;
                 })
@@ -416,6 +441,7 @@ namespace AloftModLoader
                 .Select(building =>
                 {
                     Logger.LogInfo("Building building data:" + building.name);
+
                     var populationData = ScriptableObject.CreateInstance(typeof(AloftModFrameworkPopulationData)) as AloftModFrameworkPopulationData;
                     populationData.hideFlags = HideFlags.HideAndDontSave;
                     populationData.PopulationID = (PopulationID.ID)building.PopulationId;
