@@ -111,8 +111,9 @@ namespace AloftModFramework.Items
         public string DisplayDescription;
         public Sprite DisplaySprite;
 
-        // TOOD: some day we should allow this to be set without the enum (kinda like for items), so we can add custom categories.
         public ScriptableBuildingTab.BuildingCategory Category;
+        public AloftModFrameworkBuildingCategory ModCategory;
+        public int CategoryId;
         
         // This is really the "LOOK" of the construction thing.
         public AloftModFrameworkBuildingData BuildingData;
@@ -133,5 +134,31 @@ namespace AloftModFramework.Items
 
 
         public ScriptableCrafting.ConstructionMaterial AudioType;
+
+        public ScriptableBuildingTab.BuildingCategory GetCategory()
+        {
+            if (ModCategory != null)
+            {
+                return (ScriptableBuildingTab.BuildingCategory) ModCategory.BuildingCategoryId;
+            }
+            
+            if (CategoryId != 0)
+            {
+                return (ScriptableBuildingTab.BuildingCategory)CategoryId;
+            }
+
+            return Category;
+        }
+    }
+
+    [CreateAssetMenu(fileName = "Building Category", menuName = "AloftModFramework/Building Category")]
+    public class AloftModFrameworkBuildingCategory : ScriptableObject
+    {
+        public int BuildingCategoryId;
+        public string Name;
+        public Sprite DisplayIcon;
+        public Sprite SecondaryIcon;
+        public bool UseAParentCategory = false;
+        public ScriptableBuildingTab.BuildingCategory ParentCategory;
     }
 }

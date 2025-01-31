@@ -12,6 +12,8 @@ using System.Linq;
 using System.Reflection;
 using Terrain.Platforms.Population;
 using Terrain.Platforms.Types;
+using UI;
+using UI.Building;
 using UnityEngine;
 using Utilities;
 using static Scriptable_Objects.SRecipeManager;
@@ -191,6 +193,32 @@ namespace AloftModLoader
             }
             return __result;
         }
+
+        public static bool CustomTabsAdded = false;
+        public static void AddMoreTabs(UI_BuildingMenu __instance)
+        {
+            if (!CustomTabsAdded)
+            {
+                CustomTabsAdded = true;
+
+                for (int i = 0; i < AloftModLoader.BuildingTabs.Count; i++)
+                {
+                    var tab = AloftModLoader.BuildingTabs[i];
+
+                    if (tab.HasParentCategory)
+                    {
+                        var parentCategory = __instance.ScriptableTabs.FirstOrDefault(x => x.Category == tab.ParentCategory);
+                        if (parentCategory != null)
+                        {
+                            parentCategory.SubTabs = parentCategory.SubTabs.AddToArray(tab);
+                        }
+                    } else
+                    {
+                        __instance.ScriptableTabs = __instance.ScriptableTabs.AddToArray(tab);
+                    }
+                }
+            }
+        }
     }
 
     public static class Cheats {
@@ -263,6 +291,10 @@ namespace AloftModLoader
             return true;
         }
 
+        public static void TweakCommandsOnStart(CanvasConsole __instance)
+        {
+
+        }
     }
 
     public class AloftModFrameworkPopulationData : ScriptablePopulationData
@@ -273,6 +305,12 @@ namespace AloftModLoader
     public class AloftModFrameworkInternalCraftingRecipe : ScriptableCraftRecipe
     {
         public SRecipeManager.CraftingStation CraftingStation;
+    }
+
+    public class AloftModFrameworkInternalBuildingTab : ScriptableBuildingTab
+    {
+        public bool HasParentCategory = false;
+        public BuildingCategory ParentCategory;
     }
 
     [BepInPlugin(GUID, NAME, VERSION)]
@@ -288,6 +326,7 @@ namespace AloftModLoader
         static List<UnityEngine.Object> allAssets;
         public static List<ScriptableInventoryItem> Items;
         public static List<AloftModFrameworkInternalCraftingRecipe> Recipes;
+        public static List<AloftModFrameworkInternalBuildingTab> BuildingTabs;
         public static List<ScriptableCraftRecipeGroup> RecipeGroups;
         public static List<ScriptableCrafting> BuildingBlueprints;
         public static List<AloftModFrameworkPopulationData> Buildings;
@@ -403,6 +442,25 @@ namespace AloftModLoader
                 .ToList();
 
 
+            BuildingTabs = allAssets
+                .Where(x => x is AloftModFrameworkBuildingCategory)
+                .Cast<AloftModFrameworkBuildingCategory>()
+                .Select(x =>
+                {
+                    var buildingTab = ScriptableObject.CreateInstance<AloftModFrameworkInternalBuildingTab>();
+                    buildingTab.Category = (ScriptableBuildingTab.BuildingCategory) x.BuildingCategoryId;
+                    buildingTab.DisplayName = x.Name;
+                    buildingTab.DisplayIcon = x.DisplayIcon;
+                    buildingTab.SecondaryIcon = x.SecondaryIcon;
+                    buildingTab.SubTabs = new ScriptableBuildingTab[0];
+
+                    buildingTab.HasParentCategory = x.UseAParentCategory;
+                    buildingTab.ParentCategory = x.ParentCategory;
+
+                    return buildingTab;
+                })
+                .ToList();
+
             var buildingBlueprints = allAssets
                 .Where(x => x is AloftModFrameworkBuildingBlueprint)
                 .Cast<AloftModFrameworkBuildingBlueprint>()
@@ -462,7 +520,7 @@ namespace AloftModLoader
                     blueprintData.DisplayDescription = buildingBlueprint.DisplayDescription;
                     blueprintData.DisplaySprite = buildingBlueprint.DisplaySprite;
                     blueprintData.HideInBuildMenu = buildingBlueprint.HideInBuildMenu;
-                    blueprintData.Category = buildingBlueprint.Category;
+                    blueprintData.Category = buildingBlueprint.GetCategory();
                     blueprintData.Variants = buildingBlueprint.Variants.Select(variant => (PopulationID.ID)variant.PopulationId).ToArray();
                     blueprintData.IsVariantOf = buildingBlueprint.IsVariantOf == null ? PopulationID.ID.Empty : (PopulationID.ID)buildingBlueprint.IsVariantOf.PopulationId;
                     blueprintData.DefaultScale = buildingBlueprint.DefaultScale;
@@ -565,10 +623,9 @@ namespace AloftModLoader
             var prefabPoint = AccessTools.Method(typeof(ScriptablePopulationData), nameof(ScriptablePopulationData.GetPrefabGameObject));
             var prefabHook = AccessTools.Method(typeof(BuildingHooks), nameof(BuildingHooks.GetPrefabGameObject));
             harmony.Patch(prefabPoint, null, new HarmonyMethod(prefabHook));
-
-            var originalScriptableItem = AccessTools.Method(typeof(UI.CanvasConsole), "EnterCommand");
-            var secondScriptableItem = AccessTools.Method(typeof(Cheats), nameof(Cheats.ProcessCommand));
-            harmony.Patch(originalScriptableItem, new HarmonyMethod(secondScriptableItem));
+            var buildingTabsHookPoint = AccessTools.Method(typeof(UI_BuildingMenu), nameof(UI_BuildingMenu.Tabs_Initialize));
+            var buildingTabsHook = AccessTools.Method(typeof(BuildingHooks), nameof(BuildingHooks.AddMoreTabs));
+            harmony.Patch(buildingTabsHookPoint, new HarmonyMethod(buildingTabsHook));
         }
 
     }
