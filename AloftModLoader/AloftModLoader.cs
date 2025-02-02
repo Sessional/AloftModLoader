@@ -1,6 +1,8 @@
 ﻿using AloftModFramework.Items;
+using Balance;
 using BepInEx;
 using BepInEx.Unity.Mono;
+using Creator.Creator_IO;
 using HarmonyLib;
 using Level_Manager;
 using Scriptable_Objects;
@@ -11,11 +13,13 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using Terrain.Platforms.Population;
+using Terrain.Platforms.Population.BalanceSpawner;
 using Terrain.Platforms.Types;
 using UI;
 using UI.Building;
 using UnityEngine;
 using Utilities;
+using static Balance.SPopBalancing;
 using static Scriptable_Objects.SRecipeManager;
 
 namespace AloftModLoader
@@ -167,6 +171,7 @@ namespace AloftModLoader
             // stomp, looks like the other one alwasy returns something stupid? WaterL
             if (AloftModLoader.Buildings != null && AloftModLoader.Buildings.Count > 0)
             {
+                // TODO: it's more than just buildings, it's really any population...
                 var loadedPop = AloftModLoader.Buildings.FirstOrDefault(x => x.PopulationID == populationID);
                 if (loadedPop != null)
                 {
@@ -218,6 +223,63 @@ namespace AloftModLoader
                     }
                 }
             }
+        }
+    }
+
+    static class WorldGenHooks
+    {
+        public static List<SResourceBalancing.PopBalanceList> AlreadyAdjustedPopBalancedLists = new List<SResourceBalancing.PopBalanceList>();
+        public static SResourceBalancing GetResourceBalancing(SResourceBalancing __result, PopulationID.ID popSpawnerID, PopBalanceSpawner __instance)
+        {
+            if (__result != null)
+            {
+                var soulRef = __instance.SoulRef;
+                if (soulRef != null)
+                {
+                    var spawnerType = __result.SpawnerID;
+                    var platformData = soulRef.PlatformData;
+                    var eligibleSpawners = AloftModLoader.ResourceSpawns.Where(x => x.SpawnerId == __result.SpawnerID).ToList();
+                    if (eligibleSpawners.Count == 0) return __result;
+                    foreach (SResourceBalancing.PopBalanceList popListPerBiome in __result.PopListPerBiome)
+                    {
+                        if (AlreadyAdjustedPopBalancedLists.Contains(popListPerBiome)) continue;
+                        AlreadyAdjustedPopBalancedLists.Add(popListPerBiome);
+                        var biome = popListPerBiome.BiomeID;
+                        // TODO: match biome
+                        //var popDataForBiome = eligibleSpawners.Where(x => x.Biome == resourceBalanceList.BiomeID).ToList();
+
+                        for (int i = 0; i < popListPerBiome.PopBalanceData.PopBalancings.Length; i++)
+                        {
+                            // TODO: match requirements
+                            if (eligibleSpawners.Count >= 0)
+                            {
+                                var spopBalancing = popListPerBiome.PopBalanceData;
+                                spopBalancing.PopBalancings[i].Pops = spopBalancing.PopBalancings[i].Pops.AddRangeToArray(eligibleSpawners.ToArray());
+                                //spopBalancing.PopBalancings[i].Pops = eligibleSpawners.ToArray();
+                                // TODO: weight correctly rather than doing even weightings.
+                                var evenChanceToSpawn = 1.0f / spopBalancing.PopBalancings[i].Pops.Length;
+                                for (int popChanceIndex = 0; popChanceIndex < spopBalancing.PopBalancings[i].Pops.Length; popChanceIndex++)
+                                {
+                                    spopBalancing.PopBalancings[i].Pops[popChanceIndex].ChanceToSpawn = new Vector2(evenChanceToSpawn * popChanceIndex, evenChanceToSpawn * (popChanceIndex + 1));
+                                }
+                                Console.WriteLine(spopBalancing.PopBalancings[i]);
+                            }
+                        }
+                    }
+                }
+
+            }
+            return __result;
+        }
+
+        public static List<SPopBalancing.PopulationGroupDataKit> GetPopulationGroupDataKits(List<SPopBalancing.PopulationGroupDataKit> __result, Vector3 popLocalPosition, float seed, bool islandIsHealthy, bool islandIsCleansed, SPopBalancing __instance)
+        {
+            if (__instance.name.StartsWith("CropBalancing_"))
+            {
+                //Console.WriteLine(__instance.PopBalancings.Length + ": " + string.Join(",", __instance.PopBalancings.SelectMany(x => x.Pops.SelectMany(y => y.PopIDs.Select(z => (int) z))).ToList()));
+                Console.WriteLine(__instance.name + ": " + __result.Count + " : " + string.Join(",", __result.Select(x => (int)x.PopID).ToList()));
+            }
+            return __result;
         }
     }
 
@@ -313,6 +375,12 @@ namespace AloftModLoader
         public BuildingCategory ParentCategory;
     }
 
+    public class AloftModFrameworkPopChance : PopChance
+    {
+        public SCreatorFileAbstract.CreatorTagBiomeID Biome;
+        public PopulationID.ID SpawnerId;
+    }
+
     [BepInPlugin(GUID, NAME, VERSION)]
     public class AloftModLoader : BaseUnityPlugin
     {
@@ -331,13 +399,13 @@ namespace AloftModLoader
         public static List<ScriptableCrafting> BuildingBlueprints;
         public static List<AloftModFrameworkPopulationData> Buildings;
         public static List<AloftModFrameworkLocalization> Localizations;
+        public static List<AloftModFrameworkPopChance> ResourceSpawns;
         public static List<GameObject> GameObjects;
 
         public static Material hackyShader;
 
-        static FieldInfo LocalizationField;
-
         public static BepInEx.Logging.ManualLogSource LoggerRef;
+
         public void Start()
         {
             Logger.LogInfo("Running!");
@@ -481,7 +549,8 @@ namespace AloftModLoader
                     populationData.BehaviourType = x.BehaviourType;
                     populationData.MultiStepBehaviour = x.MultiStepBehaviour;
                     populationData.LoadDistance = x.LoadDistance;
-                    populationData.PopDataTags = x.PopDataTags;
+                    populationData.PopDataTags = x.PopDataTags ?? new ScriptablePopulationData.PopDataTagID[0];
+                    populationData.PrefabPaths = new string[0];
 
                     if (x.CanLearnViaSketchbook)
                     {
@@ -489,6 +558,25 @@ namespace AloftModLoader
                     }
 
                     return populationData;
+                })
+                .ToList();
+
+            ResourceSpawns = allAssets
+                .Where(x => x is AloftModFrameworkSpawnedResource)
+                .Cast<AloftModFrameworkSpawnedResource>()
+                .Select(spawnedResource => {
+                    var resourceBalancing = new AloftModFrameworkPopChance();
+
+                    resourceBalancing.DebugTitle = spawnedResource.Name;
+                    resourceBalancing.SpawnerId = spawnedResource.SpawnerId;
+                    resourceBalancing.Biome = spawnedResource.Biome;
+                    resourceBalancing.PopIDs = spawnedResource.PopulationIds.Select(x => (PopulationID.ID)x).ToArray();
+                    resourceBalancing.SpawnAmount = new MinMaxInt(spawnedResource.SpawnAmountMin, spawnedResource.SpawnAmountMax);
+                    resourceBalancing.Spreading = new MinMax(spawnedResource.SpreadingMin, spawnedResource.SpreadingMax);
+                    resourceBalancing.Density = spawnedResource.Density;
+                    resourceBalancing.ChanceToSpawn = Vector2.zero;
+
+                    return resourceBalancing;
                 })
                 .ToList();
 
@@ -507,7 +595,7 @@ namespace AloftModLoader
                     populationData.BehaviourType = building.BehaviourType;
                     populationData.MultiStepBehaviour = building.MultiStepBehaviour;
                     populationData.LoadDistance = building.LoadDistance;
-                    populationData.PopDataTags = building.PopDataTags;
+                    populationData.PopDataTags = building.PopDataTags ?? new ScriptablePopulationData.PopDataTagID[0];
                     populationData.PrefabPaths = new string[0];
 
                     var buildingBlueprint = buildingBlueprints.First(blueprint => blueprint.BuildingData == building);
@@ -547,7 +635,8 @@ namespace AloftModLoader
             var workbench = Resources.Load("Platform Builder/Constructions/Machines/Pre_Construction_Workbench") as GameObject;
             var workbenchMeshRenderer = workbench.GetComponentsInChildren<MeshRenderer>().First();
             var workbenchMaterial = workbenchMeshRenderer.material;
-            Buildings = buildingsAndTheirBlueprints.Select(x => x.Building)//.Union(BuildingsWithoutBlueprints)
+            Buildings = buildingsAndTheirBlueprints.Select(x => x.Building)
+                .Union(BuildingsWithoutBlueprints)
                 .ForEach(x =>
                 {
                     x.Prefab.GetComponentsInChildren<MeshRenderer>().ForEach(mesh =>
@@ -626,6 +715,15 @@ namespace AloftModLoader
             var buildingTabsHookPoint = AccessTools.Method(typeof(UI_BuildingMenu), nameof(UI_BuildingMenu.Tabs_Initialize));
             var buildingTabsHook = AccessTools.Method(typeof(BuildingHooks), nameof(BuildingHooks.AddMoreTabs));
             harmony.Patch(buildingTabsHookPoint, new HarmonyMethod(buildingTabsHook));
+
+            var popBalancingPoint = AccessTools.Method(typeof(SPopBalancing), nameof(SPopBalancing.GetPopulationDataKits));
+            var popBalancingHook = AccessTools.Method(typeof(WorldGenHooks), nameof(WorldGenHooks.GetPopulationGroupDataKits));
+            harmony.Patch(popBalancingPoint, null, new HarmonyMethod(popBalancingHook));
+
+
+            var balancingManagerResources = AccessTools.Method(typeof(SBalancingManager), nameof(SBalancingManager.GetResourceBalancing));
+            var balancingManagerResourcesHook = AccessTools.Method(typeof(WorldGenHooks), nameof(WorldGenHooks.GetResourceBalancing));
+            harmony.Patch(balancingManagerResources, null, new HarmonyMethod(balancingManagerResourcesHook));
         }
 
     }

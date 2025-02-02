@@ -1,5 +1,6 @@
 ﻿using Audio;
 using Crafting.MultiStep_Construction;
+using Creator.Creator_IO;
 using Player.Player_Equip;
 using Scriptable_Objects;
 using System;
@@ -160,5 +161,21 @@ namespace AloftModFramework.Items
         public Sprite SecondaryIcon;
         public bool UseAParentCategory = false;
         public ScriptableBuildingTab.BuildingCategory ParentCategory;
+    }
+
+    [CreateAssetMenu(fileName = "Spawnable Resource", menuName = "AloftModFramework/Spawnable Resource")]
+    public class AloftModFrameworkSpawnedResource : ScriptableObject
+    {
+        public string Name;
+        public int[] PopulationIds;
+        public int SpawnAmountMin;
+        public int SpawnAmountMax;
+        public float SpreadingMin;
+        public float SpreadingMax;
+        public float Density;
+        //todo: chance as "weight"
+
+        public SCreatorFileAbstract.CreatorTagBiomeID Biome;
+        public PopulationID.ID SpawnerId;
     }
 }
