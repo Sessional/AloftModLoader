@@ -1,3 +1,6 @@
+> [!IMPORTANT]  
+> This repository was rehomed into the [Aloft Mods repository](https://github.com/Sessional/AloftMods) to improve the workflow experience.
+
 # AloftModLoader
 A mod loader for Aloft to facilitate content-only asset bundle mods for Aloft. AloftModLoader aims to erase the boiler plate of creating a content only and plugs content directly into Aloft dynamically at run time.
 
